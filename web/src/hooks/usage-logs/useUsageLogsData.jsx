@@ -439,13 +439,27 @@ export const useLogsData = () => {
             other.cache_creation_ratio_1h || other.cache_creation_ratio || 1.0,
           );
         } else {
+          // 如果有新的 input_price 字段，从中计算兼容的 model_ratio
+          // 旧公式: inputPrice = modelRatio * 2.0，所以 modelRatio = inputPrice / 2.0
+          let modelRatio = other?.model_ratio;
+          let completionRatio = other?.completion_ratio;
+          let groupRatio = other?.group_ratio;
+
+          if (modelRatio === undefined && other?.input_price !== undefined) {
+            modelRatio = other.input_price / 2.0;
+            if (modelRatio <= 0) modelRatio = 1.0;
+          }
+          if (completionRatio === undefined && other?.input_price > 0 && other?.output_price !== undefined) {
+            completionRatio = other.output_price / other.input_price;
+          }
+
           content = renderModelPrice(
             logs[i].prompt_tokens,
             logs[i].completion_tokens,
-            other?.model_ratio,
+            modelRatio,
             other?.model_price,
-            other?.completion_ratio,
-            other?.group_ratio,
+            completionRatio,
+            groupRatio,
             other?.user_group_ratio,
             other?.cache_tokens || 0,
             other?.cache_ratio || 1.0,

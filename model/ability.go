@@ -144,33 +144,34 @@ func GetChannel(group string, model string, retry int) (*Channel, error) {
 }
 
 func (channel *Channel) AddAbilities(tx *gorm.DB) error {
-	models_ := strings.Split(channel.Models, ",")
-	groups_ := strings.Split(channel.Group, ",")
+	modelGroups := channel.GetModelGroups()
+	if len(modelGroups) == 0 {
+		return nil
+	}
 	abilitySet := make(map[string]struct{})
-	abilities := make([]Ability, 0, len(models_))
-	for _, model := range models_ {
-		for _, group := range groups_ {
+	abilities := make([]Ability, 0, len(modelGroups))
+
+	for model, groups := range modelGroups {
+		for _, group := range groups {
 			key := group + "|" + model
 			if _, exists := abilitySet[key]; exists {
 				continue
 			}
 			abilitySet[key] = struct{}{}
-			ability := Ability{
-				Group:     group,
-				Model:     model,
+			abilities = append(abilities, Ability{
+				Group:     strings.TrimSpace(group),
+				Model:     strings.TrimSpace(model),
 				ChannelId: channel.Id,
 				Enabled:   channel.Status == common.ChannelStatusEnabled,
 				Priority:  channel.Priority,
 				Weight:    uint(channel.GetWeight()),
 				Tag:       channel.Tag,
-			}
-			abilities = append(abilities, ability)
+			})
 		}
 	}
 	if len(abilities) == 0 {
 		return nil
 	}
-	// choose DB or provided tx
 	useDB := DB
 	if tx != nil {
 		useDB = tx
@@ -181,6 +182,18 @@ func (channel *Channel) AddAbilities(tx *gorm.DB) error {
 			return err
 		}
 	}
+
+	// 同步模型到分组定价表（异步执行，不影响主流程）
+	go func() {
+		if err := SyncModelsToGroupPrices(modelGroups); err != nil {
+			common.SysLog(fmt.Sprintf("SyncModelsToGroupPrices failed: %v", err))
+		}
+		// 清理孤立的分组模型价格记录
+		if err := CleanupOrphanedGroupModelPrices(); err != nil {
+			common.SysLog(fmt.Sprintf("CleanupOrphanedGroupModelPrices failed: %v", err))
+		}
+	}()
+
 	return nil
 }
 
@@ -192,7 +205,6 @@ func (channel *Channel) DeleteAbilities() error {
 // Make sure the channel is completed before calling this function.
 func (channel *Channel) UpdateAbilities(tx *gorm.DB) error {
 	isNewTx := false
-	// 如果没有传入事务，创建新的事务
 	if tx == nil {
 		tx = DB.Begin()
 		if tx.Error != nil {
@@ -206,7 +218,6 @@ func (channel *Channel) UpdateAbilities(tx *gorm.DB) error {
 		}()
 	}
 
-	// First delete all abilities of this channel
 	err := tx.Where("channel_id = ?", channel.Id).Delete(&Ability{}).Error
 	if err != nil {
 		if isNewTx {
@@ -215,28 +226,33 @@ func (channel *Channel) UpdateAbilities(tx *gorm.DB) error {
 		return err
 	}
 
-	// Then add new abilities
-	models_ := strings.Split(channel.Models, ",")
-	groups_ := strings.Split(channel.Group, ",")
+	modelGroups := channel.GetModelGroups()
+	if len(modelGroups) == 0 {
+		if isNewTx {
+			return tx.Commit().Error
+		}
+		return nil
+	}
+
 	abilitySet := make(map[string]struct{})
-	abilities := make([]Ability, 0, len(models_))
-	for _, model := range models_ {
-		for _, group := range groups_ {
+	abilities := make([]Ability, 0, len(modelGroups))
+
+	for model, groups := range modelGroups {
+		for _, group := range groups {
 			key := group + "|" + model
 			if _, exists := abilitySet[key]; exists {
 				continue
 			}
 			abilitySet[key] = struct{}{}
-			ability := Ability{
-				Group:     group,
-				Model:     model,
+			abilities = append(abilities, Ability{
+				Group:     strings.TrimSpace(group),
+				Model:     strings.TrimSpace(model),
 				ChannelId: channel.Id,
 				Enabled:   channel.Status == common.ChannelStatusEnabled,
 				Priority:  channel.Priority,
 				Weight:    uint(channel.GetWeight()),
 				Tag:       channel.Tag,
-			}
-			abilities = append(abilities, ability)
+			})
 		}
 	}
 
@@ -252,10 +268,22 @@ func (channel *Channel) UpdateAbilities(tx *gorm.DB) error {
 		}
 	}
 
-	// 如果是新创建的事务，需要提交
 	if isNewTx {
-		return tx.Commit().Error
+		if err := tx.Commit().Error; err != nil {
+			return err
+		}
 	}
+
+	// 同步模型到分组定价表
+	go func() {
+		if err := SyncModelsToGroupPrices(modelGroups); err != nil {
+			common.SysLog(fmt.Sprintf("SyncModelsToGroupPrices failed: %v", err))
+		}
+		// 清理孤立的分组模型价格记录
+		if err := CleanupOrphanedGroupModelPrices(); err != nil {
+			common.SysLog(fmt.Sprintf("CleanupOrphanedGroupModelPrices failed: %v", err))
+		}
+	}()
 
 	return nil
 }

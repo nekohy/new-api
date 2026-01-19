@@ -15,7 +15,6 @@ import (
 
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/model"
-	"github.com/QuantumNous/new-api/setting/ratio_setting"
 
 	"github.com/gin-gonic/gin"
 )
@@ -289,7 +288,8 @@ func FetchUpstreamRatios(c *gin.Context) {
 	wg.Wait()
 	close(ch)
 
-	localData := ratio_setting.GetExposedData()
+	// 新定价系统不再使用旧的 ratio 配置，返回空数据
+	localData := make(map[string]any)
 
 	var testResults []dto.TestResult
 	var successfulChannels []struct {

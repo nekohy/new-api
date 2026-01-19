@@ -39,7 +39,6 @@ func SetApiRouter(router *gin.Engine) {
 		apiRouter.GET("/oauth/email/bind", middleware.CriticalRateLimit(), controller.EmailBind)
 		apiRouter.GET("/oauth/telegram/login", middleware.CriticalRateLimit(), controller.TelegramLogin)
 		apiRouter.GET("/oauth/telegram/bind", middleware.CriticalRateLimit(), controller.TelegramBind)
-		apiRouter.GET("/ratio_config", middleware.CriticalRateLimit(), controller.GetRatioConfig)
 
 		apiRouter.POST("/stripe/webhook", controller.StripeWebhook)
 		apiRouter.POST("/creem/webhook", controller.CreemWebhook)
@@ -59,11 +58,13 @@ func SetApiRouter(router *gin.Engine) {
 			userRoute.GET("/logout", controller.Logout)
 			userRoute.GET("/epay/notify", controller.EpayNotify)
 			userRoute.GET("/groups", controller.GetUserGroups)
+			userRoute.GET("/model-groups", controller.GetUserModelGroupsV2)
 
 			selfRoute := userRoute.Group("/")
 			selfRoute.Use(middleware.UserAuth())
 			{
 				selfRoute.GET("/self/groups", controller.GetUserGroups)
+				selfRoute.GET("/self/model-groups", controller.GetUserModelGroupsV2)
 				selfRoute.GET("/self", controller.GetSelf)
 				selfRoute.GET("/models", controller.GetUserModels)
 				selfRoute.PUT("/self", controller.UpdateSelf)
@@ -123,7 +124,6 @@ func SetApiRouter(router *gin.Engine) {
 		{
 			optionRoute.GET("/", controller.GetOptions)
 			optionRoute.PUT("/", controller.UpdateOption)
-			optionRoute.POST("/rest_model_ratio", controller.ResetModelRatio)
 			optionRoute.POST("/migrate_console_setting", controller.MigrateConsoleSetting) // 用于迁移检测的旧键，下个版本会删除
 		}
 		ratioSyncRoute := apiRouter.Group("/ratio_sync")
@@ -295,6 +295,35 @@ func SetApiRouter(router *gin.Engine) {
 			deploymentsRoute.PUT("/:id/name", controller.UpdateDeploymentName)
 			deploymentsRoute.POST("/:id/extend", controller.ExtendDeployment)
 			deploymentsRoute.DELETE("/:id", controller.DeleteDeployment)
+		}
+
+		// 分组模型定价 API (模型分组)
+		pricingGroupRoute := apiRouter.Group("/pricing-groups")
+		pricingGroupRoute.Use(middleware.AdminAuth())
+		{
+			pricingGroupRoute.GET("", controller.GetAllPricingGroups)
+			pricingGroupRoute.POST("", controller.CreatePricingGroup)
+			pricingGroupRoute.DELETE("/:group", controller.DeletePricingGroup)
+			pricingGroupRoute.GET("/:group/prices", controller.GetGroupPrices)
+			pricingGroupRoute.POST("/:group/prices", controller.AddModelToGroup)
+			pricingGroupRoute.POST("/:group/prices/batch", controller.BatchAddModelsToGroup)
+			pricingGroupRoute.POST("/:group/prices/batch-delete", controller.BatchDeletePricingGroupPrices)
+			pricingGroupRoute.POST("/:group/prices/sync-from-group", controller.SyncFromGroup)
+			pricingGroupRoute.POST("/:group/prices/apply-multiplier", controller.ApplyMultiplier)
+			pricingGroupRoute.PUT("/:group/prices/:model", controller.UpdatePricingGroupPriceByName)
+			pricingGroupRoute.DELETE("/:group/prices/:model", controller.DeletePricingGroupPriceByName)
+		}
+
+		// 用户分组 API
+		userGroupRoute := apiRouter.Group("/user-groups")
+		userGroupRoute.Use(middleware.AdminAuth())
+		{
+			userGroupRoute.GET("", controller.GetAllUserGroups)
+			userGroupRoute.POST("", controller.CreateUserGroup)
+			userGroupRoute.PUT("/:group", controller.UpdateUserGroup)
+			userGroupRoute.DELETE("/:group", controller.DeleteUserGroup)
+			userGroupRoute.GET("/:group/model-groups", controller.GetUserPricingAccessMappings)
+			userGroupRoute.PUT("/:group/model-groups", controller.ReplaceUserPricingAccessMappings)
 		}
 	}
 }

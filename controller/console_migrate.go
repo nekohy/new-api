@@ -10,6 +10,7 @@ import (
 	"github.com/QuantumNous/new-api/model"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 // MigrateConsoleSetting 迁移旧的控制台相关配置到 console_setting.*
@@ -26,24 +27,27 @@ func MigrateConsoleSetting(c *gin.Context) {
 		valMap[o.Key] = o.Value
 	}
 
-	// 处理 APIInfo
+	newOptions := make(map[string]string)
+	oldKeys := []string{"ApiInfo", "Announcements", "FAQ", "UptimeKumaUrl", "UptimeKumaSlug"}
+
+	// 1. 处理 APIInfo
 	if v := valMap["ApiInfo"]; v != "" {
-		var arr []map[string]interface{}
+		var arr []interface{}
 		if err := json.Unmarshal([]byte(v), &arr); err == nil {
 			if len(arr) > 50 {
 				arr = arr[:50]
 			}
 			bytes, _ := json.Marshal(arr)
-			model.UpdateOption("console_setting.api_info", string(bytes))
+			newOptions["console_setting.api_info"] = string(bytes)
 		}
-		model.UpdateOption("ApiInfo", "")
 	}
-	// Announcements 直接搬
+
+	// 2. Announcements 直接搬
 	if v := valMap["Announcements"]; v != "" {
-		model.UpdateOption("console_setting.announcements", v)
-		model.UpdateOption("Announcements", "")
+		newOptions["console_setting.announcements"] = v
 	}
-	// FAQ 转换
+
+	// 3. FAQ 转换
 	if v := valMap["FAQ"]; v != "" {
 		var arr []map[string]interface{}
 		if err := json.Unmarshal([]byte(v), &arr); err == nil {
@@ -65,15 +69,14 @@ func MigrateConsoleSetting(c *gin.Context) {
 				out = out[:50]
 			}
 			bytes, _ := json.Marshal(out)
-			model.UpdateOption("console_setting.faq", string(bytes))
+			newOptions["console_setting.faq"] = string(bytes)
 		}
-		model.UpdateOption("FAQ", "")
 	}
-	// Uptime Kuma 迁移到新的 groups 结构（console_setting.uptime_kuma_groups）
+
+	// 4. Uptime Kuma 迁移
 	url := valMap["UptimeKumaUrl"]
 	slug := valMap["UptimeKumaSlug"]
 	if url != "" && slug != "" {
-		// 仅当同时存在 URL 与 Slug 时才进行迁移
 		groups := []map[string]interface{}{
 			{
 				"id":           1,
@@ -84,19 +87,30 @@ func MigrateConsoleSetting(c *gin.Context) {
 			},
 		}
 		bytes, _ := json.Marshal(groups)
-		model.UpdateOption("console_setting.uptime_kuma_groups", string(bytes))
-	}
-	// 清空旧键内容
-	if url != "" {
-		model.UpdateOption("UptimeKumaUrl", "")
-	}
-	if slug != "" {
-		model.UpdateOption("UptimeKumaSlug", "")
+		newOptions["console_setting.uptime_kuma_groups"] = string(bytes)
 	}
 
-	// 删除旧键记录
-	oldKeys := []string{"ApiInfo", "Announcements", "FAQ", "UptimeKumaUrl", "UptimeKumaSlug"}
-	model.DB.Where("key IN ?", oldKeys).Delete(&model.Option{})
+	// 使用事务进行原子操作
+	err = model.DB.Transaction(func(tx *gorm.DB) error {
+		// 写入新配置
+		for k, v := range newOptions {
+			option := model.Option{Key: k}
+			if err := tx.FirstOrCreate(&option, model.Option{Key: k}).Error; err != nil {
+				return err
+			}
+			option.Value = v
+			if err := tx.Save(&option).Error; err != nil {
+				return err
+			}
+		}
+		// 删除旧键
+		return tx.Where("key IN ?", oldKeys).Delete(&model.Option{}).Error
+	})
+
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "message": err.Error()})
+		return
+	}
 
 	// 重新加载 OptionMap
 	model.InitOptionMap()

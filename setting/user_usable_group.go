@@ -9,7 +9,9 @@ import (
 
 var userUsableGroups = map[string]string{
 	"default": "默认分组",
-	"vip":     "vip分组",
+	// auto 分组：自动从用户可用的分组中按价格从低到高选择渠道
+	// 使用时会遍历用户有权访问的所有分组，优先使用价格最低的分组
+	"auto": "自动分组（按价格从低到高选择）",
 }
 var userUsableGroupsMutex sync.RWMutex
 

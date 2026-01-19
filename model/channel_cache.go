@@ -11,7 +11,6 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
-	"github.com/QuantumNous/new-api/setting/ratio_setting"
 )
 
 var group2model2channels map[string]map[string][]int // enabled channel
@@ -30,28 +29,19 @@ func InitChannelCache() {
 	}
 	var abilities []*Ability
 	DB.Find(&abilities)
-	groups := make(map[string]bool)
-	for _, ability := range abilities {
-		groups[ability.Group] = true
-	}
+
 	newGroup2model2channels := make(map[string]map[string][]int)
-	for group := range groups {
-		newGroup2model2channels[group] = make(map[string][]int)
-	}
-	for _, channel := range channels {
-		if channel.Status != common.ChannelStatusEnabled {
-			continue // skip disabled channels
+	for _, ability := range abilities {
+		if !ability.Enabled {
+			continue
 		}
-		groups := strings.Split(channel.Group, ",")
-		for _, group := range groups {
-			models := strings.Split(channel.Models, ",")
-			for _, model := range models {
-				if _, ok := newGroup2model2channels[group][model]; !ok {
-					newGroup2model2channels[group][model] = make([]int, 0)
-				}
-				newGroup2model2channels[group][model] = append(newGroup2model2channels[group][model], channel.Id)
-			}
+		if _, ok := newGroup2model2channels[ability.Group]; !ok {
+			newGroup2model2channels[ability.Group] = make(map[string][]int)
 		}
+		newGroup2model2channels[ability.Group][ability.Model] = append(
+			newGroup2model2channels[ability.Group][ability.Model],
+			ability.ChannelId,
+		)
 	}
 
 	// sort by priority
@@ -107,7 +97,7 @@ func GetRandomSatisfiedChannel(group string, model string, retry int) (*Channel,
 
 	// If no channels found, try to find channels with the normalized model name.
 	if len(channels) == 0 {
-		normalizedModel := ratio_setting.FormatMatchingModelName(model)
+		normalizedModel := formatMatchingModelName(model)
 		channels = group2model2channels[group][normalizedModel]
 	}
 
@@ -262,4 +252,20 @@ func CacheUpdateChannel(channel *Channel) {
 	println("before:", channelsIDM[channel.Id].ChannelInfo.MultiKeyPollingIndex)
 	channelsIDM[channel.Id] = channel
 	println("after :", channelsIDM[channel.Id].ChannelInfo.MultiKeyPollingIndex)
+}
+
+// formatMatchingModelName 格式化模型名称用于匹配
+func formatMatchingModelName(modelName string) string {
+	// 处理 gpt-4-gizmo-* 等特殊模型名
+	if strings.HasPrefix(modelName, "gpt-4-gizmo-") {
+		return "gpt-4-gizmo-*"
+	}
+	if strings.HasPrefix(modelName, "gpt-4o-gizmo-") {
+		return "gpt-4o-gizmo-*"
+	}
+	// 处理 thinking-* 模型
+	if strings.HasPrefix(modelName, "thinking-") {
+		return "thinking-*"
+	}
+	return modelName
 }

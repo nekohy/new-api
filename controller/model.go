@@ -15,9 +15,9 @@ import (
 	"github.com/QuantumNous/new-api/relay/channel/minimax"
 	"github.com/QuantumNous/new-api/relay/channel/moonshot"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/relay/helper"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
-	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
 	"github.com/samber/lo"
@@ -134,7 +134,8 @@ func ListModels(c *gin.Context, modelType int) {
 		}
 		for allowModel, _ := range tokenModelLimit {
 			if !acceptUnsetRatioModel {
-				_, _, exist := ratio_setting.GetModelRatioOrPrice(allowModel)
+				// 使用新定价系统检查模型是否有定价配置
+				exist := helper.ContainPrice(allowModel)
 				if !exist {
 					continue
 				}
@@ -182,7 +183,8 @@ func ListModels(c *gin.Context, modelType int) {
 		}
 		for _, modelName := range models {
 			if !acceptUnsetRatioModel {
-				_, _, exist := ratio_setting.GetModelRatioOrPrice(modelName)
+				// 使用新定价系统检查模型是否有定价配置
+				exist := helper.ContainPrice(modelName)
 				if !exist {
 					continue
 				}
@@ -241,9 +243,17 @@ func ListModels(c *gin.Context, modelType int) {
 }
 
 func ChannelListModels(c *gin.Context) {
+	// 组装新 slice，避免修改全局变量（防止数据竞争）
+	resp := make([]dto.OpenAIModels, 0, len(openAIModels))
+	for _, m := range openAIModels {
+		modelCopy := m
+		ok := helper.ContainPrice(m.Id)
+		modelCopy.HasPrice = ok
+		resp = append(resp, modelCopy)
+	}
 	c.JSON(200, gin.H{
 		"success": true,
-		"data":    openAIModels,
+		"data":    resp,
 	})
 }
 

@@ -189,8 +189,8 @@ func sizeToResolution(size string) (string, error) {
 	return "", fmt.Errorf("invalid size: %s", size)
 }
 
-func ProcessAliOtherRatios(aliReq *AliVideoRequest) (map[string]float64, error) {
-	otherRatios := make(map[string]float64)
+func ProcessAliMultipliers(aliReq *AliVideoRequest) (map[string]float64, error) {
+	multipliers := make(map[string]float64)
 	aliRatios := map[string]map[string]float64{
 		"wan2.6-i2v": {
 			"720P":  1,
@@ -243,12 +243,12 @@ func ProcessAliOtherRatios(aliReq *AliVideoRequest) (map[string]float64, error) 
 			resolution = resolution + "P"
 		}
 	}
-	if otherRatio, ok := aliRatios[aliReq.Model]; ok {
-		if ratio, ok := otherRatio[resolution]; ok {
-			otherRatios[fmt.Sprintf("resolution-%s", resolution)] = ratio
+	if multiplier, ok := aliRatios[aliReq.Model]; ok {
+		if ratio, ok := multiplier[resolution]; ok {
+			multipliers[fmt.Sprintf("resolution-%s", resolution)] = ratio
 		}
 	}
-	return otherRatios, nil
+	return multipliers, nil
 }
 
 func (a *TaskAdaptor) convertToAliRequest(info *relaycommon.RelayInfo, req relaycommon.TaskSubmitReq) (*AliVideoRequest, error) {
@@ -335,16 +335,16 @@ func (a *TaskAdaptor) convertToAliRequest(info *relaycommon.RelayInfo, req relay
 		return nil, errors.New("can't change model with metadata")
 	}
 
-	info.PriceData.OtherRatios = map[string]float64{
+	info.PriceData.Multipliers = map[string]float64{
 		"seconds": float64(aliReq.Parameters.Duration),
 	}
 
-	ratios, err := ProcessAliOtherRatios(aliReq)
+	ratios, err := ProcessAliMultipliers(aliReq)
 	if err != nil {
 		return nil, err
 	}
 	for s, f := range ratios {
-		info.PriceData.OtherRatios[s] = f
+		info.PriceData.Multipliers[s] = f
 	}
 
 	return aliReq, nil

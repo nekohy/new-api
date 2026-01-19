@@ -11,7 +11,6 @@ import (
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/console_setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
-	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/QuantumNous/new-api/setting/system_setting"
 
 	"github.com/gin-gonic/gin"
@@ -57,6 +56,22 @@ func UpdateOption(c *gin.Context) {
 		})
 		return
 	}
+
+	deprecatedKeys := []string{
+		"ModelRatio", "ModelPrice", "CacheRatio", "GroupRatio", "GroupGroupRatio",
+		"CompletionRatio", "ImageRatio", "AudioRatio", "AudioCompletionRatio",
+		"ExposeRatioEnabled",
+	}
+	for _, key := range deprecatedKeys {
+		if option.Key == key {
+			c.JSON(http.StatusGone, gin.H{
+				"success": false,
+				"message": "此配置已迁移到定价系统，请使用 Pricing 页面管理 / This configuration has been migrated to the pricing system, please use the Pricing page",
+			})
+			return
+		}
+	}
+
 	switch option.Value.(type) {
 	case bool:
 		option.Value = common.Interface2String(option.Value.(bool))
@@ -130,42 +145,6 @@ func UpdateOption(c *gin.Context) {
 			c.JSON(http.StatusOK, gin.H{
 				"success": false,
 				"message": "无法启用 Telegram OAuth，请先填入 Telegram Bot Token！",
-			})
-			return
-		}
-	case "GroupRatio":
-		err = ratio_setting.CheckGroupRatio(option.Value.(string))
-		if err != nil {
-			c.JSON(http.StatusOK, gin.H{
-				"success": false,
-				"message": err.Error(),
-			})
-			return
-		}
-	case "ImageRatio":
-		err = ratio_setting.UpdateImageRatioByJSONString(option.Value.(string))
-		if err != nil {
-			c.JSON(http.StatusOK, gin.H{
-				"success": false,
-				"message": "图片倍率设置失败: " + err.Error(),
-			})
-			return
-		}
-	case "AudioRatio":
-		err = ratio_setting.UpdateAudioRatioByJSONString(option.Value.(string))
-		if err != nil {
-			c.JSON(http.StatusOK, gin.H{
-				"success": false,
-				"message": "音频倍率设置失败: " + err.Error(),
-			})
-			return
-		}
-	case "AudioCompletionRatio":
-		err = ratio_setting.UpdateAudioCompletionRatioByJSONString(option.Value.(string))
-		if err != nil {
-			c.JSON(http.StatusOK, gin.H{
-				"success": false,
-				"message": "音频补全倍率设置失败: " + err.Error(),
 			})
 			return
 		}

@@ -36,6 +36,7 @@ type Channel struct {
 	BalanceUpdatedTime int64   `json:"balance_updated_time" gorm:"bigint"`
 	Models             string  `json:"models"`
 	Group              string  `json:"group" gorm:"type:varchar(64);default:'default'"`
+	ModelGroups        string  `json:"model_groups" gorm:"type:text"` // {"gpt-4":["vip"],"gpt-3.5":["default","vip"]}
 	UsedQuota          int64   `json:"used_quota" gorm:"bigint;default:0"`
 	ModelMapping       *string `json:"model_mapping" gorm:"type:text"`
 	//MaxInputTokens     *int    `json:"max_input_tokens" gorm:"default:0"`
@@ -209,6 +210,41 @@ func (channel *Channel) GetGroups() []string {
 		groups[i] = strings.TrimSpace(group)
 	}
 	return groups
+}
+
+func (channel *Channel) GetModelGroups() map[string][]string {
+	if channel == nil || strings.TrimSpace(channel.ModelGroups) == "" {
+		return map[string][]string{}
+	}
+	m := map[string][]string{}
+	if err := common.Unmarshal([]byte(channel.ModelGroups), &m); err != nil {
+		return map[string][]string{}
+	}
+	for k, v := range m {
+		if k == "" {
+			delete(m, k)
+			continue
+		}
+		out := make([]string, 0, len(v))
+		seen := map[string]struct{}{}
+		for _, g := range v {
+			g = strings.TrimSpace(g)
+			if g == "" {
+				continue
+			}
+			if _, ok := seen[g]; ok {
+				continue
+			}
+			seen[g] = struct{}{}
+			out = append(out, g)
+		}
+		if len(out) == 0 {
+			delete(m, k)
+			continue
+		}
+		m[k] = out
+	}
+	return m
 }
 
 func (channel *Channel) GetOtherInfo() map[string]interface{} {
@@ -531,7 +567,16 @@ func (channel *Channel) Delete() error {
 		return err
 	}
 	err = channel.DeleteAbilities()
-	return err
+	if err != nil {
+		return err
+	}
+	// 异步清理孤立的分组模型价格记录
+	go func() {
+		if err := CleanupOrphanedPricingGroupPrices(); err != nil {
+			common.SysLog(fmt.Sprintf("CleanupOrphanedPricingGroupPrices failed: %v", err))
+		}
+	}()
+	return nil
 }
 
 var channelStatusLock sync.Mutex

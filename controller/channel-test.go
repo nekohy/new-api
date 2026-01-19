@@ -390,21 +390,33 @@ func testChannel(channel *model.Channel, testModel string, endpointType string) 
 	}
 	info.SetEstimatePromptTokens(usage.PromptTokens)
 
+	spec := priceData.Spec
 	quota := 0
-	if !priceData.UsePrice {
-		quota = usage.PromptTokens + int(math.Round(float64(usage.CompletionTokens)*priceData.CompletionRatio))
-		quota = int(math.Round(float64(quota) * priceData.ModelRatio))
-		if priceData.ModelRatio != 0 && quota <= 0 {
+	if spec.QuotaType == 1 {
+		// 按次计费
+		quota = int(spec.FixedPrice * common.QuotaPerUnit)
+	} else {
+		// 按量计费: cost = (tokens / 1M) * price * QuotaPerUnit
+		inputCost := float64(usage.PromptTokens) / 1000000 * spec.InputPrice * common.QuotaPerUnit
+		outputCost := float64(usage.CompletionTokens) / 1000000 * spec.OutputPrice * common.QuotaPerUnit
+		quota = int(math.Round(inputCost + outputCost))
+		if quota <= 0 && (spec.InputPrice > 0 || spec.OutputPrice > 0) {
 			quota = 1
 		}
-	} else {
-		quota = int(priceData.ModelPrice * common.QuotaPerUnit)
 	}
 	tok := time.Now()
 	milliseconds := tok.Sub(tik).Milliseconds()
 	consumedTime := float64(milliseconds) / 1000.0
-	other := service.GenerateTextOtherInfo(c, info, priceData.ModelRatio, priceData.GroupRatioInfo.GroupRatio, priceData.CompletionRatio,
-		usage.PromptTokensDetails.CachedTokens, priceData.CacheRatio, priceData.ModelPrice, priceData.GroupRatioInfo.GroupSpecialRatio)
+
+	// 构造 PriceSpec 用于日志
+	logSpec := &helper.PriceSpec{
+		InputPrice:  spec.InputPrice,
+		OutputPrice: spec.OutputPrice,
+		CachePrice:  spec.CacheReadPrice,
+		FixedPrice:  spec.FixedPrice,
+		QuotaType:   spec.QuotaType,
+	}
+	other := service.GenerateTextOtherInfoByPrice(c, info, logSpec, usage.PromptTokensDetails.CachedTokens)
 	model.RecordConsumeLog(c, 1, model.RecordConsumeLogParams{
 		ChannelId:        channel.Id,
 		PromptTokens:     usage.PromptTokens,

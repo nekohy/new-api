@@ -114,7 +114,7 @@ const Setting = () => {
         </span>
       ),
       content: <RatioSetting />,
-      itemKey: 'ratio',
+      itemKey: 'price',
     });
     panes.push({
       tab: (
@@ -174,7 +174,11 @@ const Setting = () => {
   useEffect(() => {
     const searchParams = new URLSearchParams(window.location.search);
     const tab = searchParams.get('tab');
-    if (tab) {
+    if (tab === 'ratio') {
+      // 兼容旧路由，自动重定向到新路由
+      setTabActiveKey('price');
+      navigate('?tab=price', { replace: true });
+    } else if (tab) {
       setTabActiveKey(tab);
     } else {
       onChangeTab('operation');

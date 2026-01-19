@@ -9,7 +9,6 @@ import (
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/config"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
-	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/QuantumNous/new-api/setting/system_setting"
 )
 
@@ -111,16 +110,7 @@ func InitOptionMap() {
 	common.OptionMap["ModelRequestRateLimitDurationMinutes"] = strconv.Itoa(setting.ModelRequestRateLimitDurationMinutes)
 	common.OptionMap["ModelRequestRateLimitSuccessCount"] = strconv.Itoa(setting.ModelRequestRateLimitSuccessCount)
 	common.OptionMap["ModelRequestRateLimitGroup"] = setting.ModelRequestRateLimitGroup2JSONString()
-	common.OptionMap["ModelRatio"] = ratio_setting.ModelRatio2JSONString()
-	common.OptionMap["ModelPrice"] = ratio_setting.ModelPrice2JSONString()
-	common.OptionMap["CacheRatio"] = ratio_setting.CacheRatio2JSONString()
-	common.OptionMap["GroupRatio"] = ratio_setting.GroupRatio2JSONString()
-	common.OptionMap["GroupGroupRatio"] = ratio_setting.GroupGroupRatio2JSONString()
 	common.OptionMap["UserUsableGroups"] = setting.UserUsableGroups2JSONString()
-	common.OptionMap["CompletionRatio"] = ratio_setting.CompletionRatio2JSONString()
-	common.OptionMap["ImageRatio"] = ratio_setting.ImageRatio2JSONString()
-	common.OptionMap["AudioRatio"] = ratio_setting.AudioRatio2JSONString()
-	common.OptionMap["AudioCompletionRatio"] = ratio_setting.AudioCompletionRatio2JSONString()
 	common.OptionMap["TopUpLink"] = common.TopUpLink
 	//common.OptionMap["ChatLink"] = common.ChatLink
 	//common.OptionMap["ChatLink2"] = common.ChatLink2
@@ -144,7 +134,6 @@ func InitOptionMap() {
 	common.OptionMap["StreamCacheQueueLength"] = strconv.Itoa(setting.StreamCacheQueueLength)
 	common.OptionMap["AutomaticDisableKeywords"] = operation_setting.AutomaticDisableKeywordsToString()
 	common.OptionMap["AutomaticDisableStatusCodes"] = operation_setting.AutomaticDisableStatusCodesToString()
-	common.OptionMap["ExposeRatioEnabled"] = strconv.FormatBool(ratio_setting.IsExposeRatioEnabled())
 
 	// 自动添加所有注册的模型配置
 	modelConfigs := config.GlobalConfig.ExportAllConfigs()
@@ -193,6 +182,12 @@ func UpdateOption(key string, value string) error {
 func updateOptionMap(key string, value string) (err error) {
 	common.OptionMapRWMutex.Lock()
 	defer common.OptionMapRWMutex.Unlock()
+
+	// 防止在 InitOptionMap 调用前访问导致 panic
+	if common.OptionMap == nil {
+		return nil
+	}
+
 	common.OptionMap[key] = value
 
 	// 检查是否是模型配置 - 使用更规范的方式处理
@@ -293,8 +288,6 @@ func updateOptionMap(key string, value string) (err error) {
 			system_setting.WorkerAllowHttpImageRequestEnabled = boolValue
 		case "DefaultUseAutoGroup":
 			setting.DefaultUseAutoGroup = boolValue
-		case "ExposeRatioEnabled":
-			ratio_setting.SetExposeRatioEnabled(boolValue)
 		}
 	}
 	switch key {
@@ -411,26 +404,8 @@ func updateOptionMap(key string, value string) (err error) {
 		common.DataExportInterval, _ = strconv.Atoi(value)
 	case "DataExportDefaultTime":
 		common.DataExportDefaultTime = value
-	case "ModelRatio":
-		err = ratio_setting.UpdateModelRatioByJSONString(value)
-	case "GroupRatio":
-		err = ratio_setting.UpdateGroupRatioByJSONString(value)
-	case "GroupGroupRatio":
-		err = ratio_setting.UpdateGroupGroupRatioByJSONString(value)
 	case "UserUsableGroups":
 		err = setting.UpdateUserUsableGroupsByJSONString(value)
-	case "CompletionRatio":
-		err = ratio_setting.UpdateCompletionRatioByJSONString(value)
-	case "ModelPrice":
-		err = ratio_setting.UpdateModelPriceByJSONString(value)
-	case "CacheRatio":
-		err = ratio_setting.UpdateCacheRatioByJSONString(value)
-	case "ImageRatio":
-		err = ratio_setting.UpdateImageRatioByJSONString(value)
-	case "AudioRatio":
-		err = ratio_setting.UpdateAudioRatioByJSONString(value)
-	case "AudioCompletionRatio":
-		err = ratio_setting.UpdateAudioCompletionRatioByJSONString(value)
 	case "TopUpLink":
 		common.TopUpLink = value
 	//case "ChatLink":

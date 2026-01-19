@@ -657,20 +657,14 @@ export function renderGroup(group) {
     );
   }
 
-  const tagColors = {
-    vip: 'yellow',
-    pro: 'yellow',
-    svip: 'red',
-    premium: 'red',
-  };
-
+  // 所有分组使用统一的动态颜色生成，确保一致性
   const groups = group.split(',').sort();
 
   return (
     <span key={group}>
       {groups.map((group) => (
         <Tag
-          color={tagColors[group] || stringToColor(group)}
+          color={stringToColor(group)}
           key={group}
           shape='circle'
           onClick={async (event) => {
@@ -693,18 +687,40 @@ export function renderGroup(group) {
 }
 
 export function renderRatio(ratio) {
+  if (ratio === undefined || ratio === null) return null;
+  const numRatio = parseFloat(ratio);
+  if (isNaN(numRatio)) {
+    return <Tag color='green'>{ratio}</Tag>;
+  }
+
   let color = 'green';
-  if (ratio > 5) {
+  if (numRatio > 5) {
     color = 'red';
-  } else if (ratio > 3) {
+  } else if (numRatio > 3) {
     color = 'orange';
-  } else if (ratio > 1) {
+  } else if (numRatio > 1) {
     color = 'blue';
+  } else if (numRatio < 1) {
+    color = 'cyan';
   }
   return (
     <Tag color={color}>
-      {ratio}x {i18next.t('倍率')}
+      ×{numRatio.toFixed(2)}
     </Tag>
+  );
+}
+
+// 渲染模型分组映射列表
+export function renderModelGroupMappings(modelGroups) {
+  if (!modelGroups || modelGroups.length === 0) return null;
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+      {modelGroups.map((m) => (
+        <Tag key={m.model_group} size='small' color='blue' type='light'>
+          {m.model_group} ×{m.rate_multiplier?.toFixed(2) || '1.00'}
+        </Tag>
+      ))}
+    </div>
   );
 }
 
@@ -844,7 +860,7 @@ export const renderGroupOption = (item) => {
           {label}
         </Typography.Text>
       </div>
-      {item.ratio && renderRatio(item.ratio)}
+      {item.model_groups && item.model_groups.length > 0 && renderModelGroupMappings(item.model_groups)}
     </div>
   );
 };
@@ -1166,10 +1182,10 @@ function renderPriceSimpleCore({
 export function renderModelPrice(
   inputTokens,
   completionTokens,
-  modelRatio,
+  modelRatio = 1.0,
   modelPrice = -1,
-  completionRatio,
-  groupRatio,
+  completionRatio = 1.0,
+  groupRatio = 1.0,
   user_group_ratio,
   cacheTokens = 0,
   cacheRatio = 1.0,

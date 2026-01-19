@@ -75,7 +75,7 @@ func (j *JSONValue) UnmarshalJSON(data []byte) error {
 
 type PrefillGroup struct {
 	Id          int            `json:"id"`
-	Name        string         `json:"name" gorm:"size:64;not null;uniqueIndex:uk_prefill_name,where:deleted_at IS NULL"`
+	Name        string         `json:"name" gorm:"size:64;not null;uniqueIndex"`
 	Type        string         `json:"type" gorm:"size:32;index;not null"`
 	Items       JSONValue      `json:"items" gorm:"type:json"`
 	Description string         `json:"description,omitempty" gorm:"type:varchar(255)"`

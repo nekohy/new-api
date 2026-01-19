@@ -127,26 +127,67 @@ const EditTokenModal = (props) => {
   };
 
   const loadGroups = async () => {
-    let res = await API.get(`/api/user/self/groups`);
+    // 使用 V2 接口：返回数组结构，性能更优（批量查询）
+    let res = await API.get(`/api/user/self/model-groups`);
     const { success, message, data } = res.data;
     if (success) {
-      let localGroupOptions = Object.entries(data).map(([group, info]) => ({
-        label: info.desc,
-        value: group,
-        ratio: info.ratio,
+      // data 结构: [{ name, description, rate_multiplier }]
+      let localGroupOptions = data.map((item) => ({
+        label: item.description || item.name,
+        value: item.name,
+        name: item.name,
+        description: item.description,
+        rate_multiplier: item.rate_multiplier || 1.0,
       }));
-      if (statusState?.status?.default_use_auto_group) {
-        if (localGroupOptions.some((group) => group.value === 'auto')) {
-          localGroupOptions.sort((a, b) => (a.value === 'auto' ? -1 : 1));
-        }
-      }
       setGroups(localGroupOptions);
-      // if (statusState?.status?.default_use_auto_group && formApiRef.current) {
-      //   formApiRef.current.setValue('group', 'auto');
-      // }
     } else {
       showError(t(message));
     }
+  };
+
+  // 自定义模型分组选项渲染器：在列表内显示倍率
+  const renderGroupOption = (item) => {
+    const { name, description, rate_multiplier, focused, selected, disabled, onClick, onMouseEnter } = item;
+
+    return (
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          padding: '8px 12px',
+          cursor: disabled ? 'not-allowed' : 'pointer',
+          backgroundColor: focused ? 'var(--semi-color-fill-0)' : 'transparent',
+          ...(selected && { backgroundColor: 'var(--semi-color-primary-light-default)' }),
+        }}
+        onClick={onClick}
+        onMouseEnter={onMouseEnter}
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden', marginRight: 8 }}>
+          <Text strong ellipsis={{ showTooltip: true }} style={{ maxWidth: isMobile ? 150 : 300 }}>
+            {description || name}
+          </Text>
+          {description && description !== name && (
+            <Text type="secondary" size="small">
+              {name}
+            </Text>
+          )}
+        </div>
+        <Tag
+          color="blue"
+          type="light"
+          size="small"
+          style={{
+            flexShrink: 0,
+            marginLeft: 'auto',
+            borderRadius: '4px',
+            fontWeight: 'bold'
+          }}
+        >
+          ×{rate_multiplier?.toFixed(2) || '1.00'}
+        </Tag>
+      </div>
+    );
   };
 
   const loadToken = async () => {
@@ -362,23 +403,46 @@ const EditTokenModal = (props) => {
                     {groups.length > 0 ? (
                       <Form.Select
                         field='group'
-                        label={t('令牌分组')}
-                        placeholder={t('令牌分组，默认为用户的分组')}
+                        label={t('模型分组')}
+                        placeholder={t('选择模型分组')}
                         optionList={groups}
                         renderOptionItem={renderGroupOption}
                         showClear
                         style={{ width: '100%' }}
+                        extraText={(() => {
+                          // 显示已选模型分组的倍率（确认提示）
+                          const currentGroup = groups.find(g => g.value === values.group);
+                          if (!currentGroup) return null;
+                          return (
+                            <div style={{ marginTop: 4 }}>
+                              <span style={{ fontSize: 12, color: 'var(--semi-color-text-2)' }}>
+                                {t('已选价格倍率：')}
+                              </span>
+                              <span style={{
+                                display: 'inline-block',
+                                fontSize: 12,
+                                marginLeft: 6,
+                                padding: '1px 6px',
+                                borderRadius: 4,
+                                backgroundColor: 'var(--semi-color-primary-light-default)',
+                                color: 'var(--semi-color-primary)'
+                              }}>
+                                ×{currentGroup.rate_multiplier?.toFixed(2) || '1.00'}
+                              </span>
+                            </div>
+                          );
+                        })()}
                       />
                     ) : (
                       <Form.Select
                         placeholder={t('管理员未设置用户可选分组')}
                         disabled
-                        label={t('令牌分组')}
+                        label={t('模型分组')}
                         style={{ width: '100%' }}
                       />
                     )}
                   </Col>
-                  <Col span={24} style={{ display: values.group === 'auto' ? 'block' : 'none' }}>
+                  <Col span={24} style={{ display: 'none' }}>
                     <Form.Switch
                       field='cross_group_retry'
                       label={t('跨分组重试')}

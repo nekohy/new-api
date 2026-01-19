@@ -19,7 +19,6 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/router"
 	"github.com/QuantumNous/new-api/service"
-	"github.com/QuantumNous/new-api/setting/ratio_setting"
 
 	"github.com/bytedance/gopkg/util/gopool"
 	"github.com/gin-contrib/sessions"
@@ -233,9 +232,6 @@ func InitResources() error {
 
 	logger.SetupLogger()
 
-	// Initialize model settings
-	ratio_setting.InitRatioSettings()
-
 	service.InitHttpClient()
 
 	service.InitTokenEncoders()
@@ -251,6 +247,27 @@ func InitResources() error {
 
 	// Initialize options, should after model.InitDB()
 	model.InitOptionMap()
+
+	// 执行定价系统迁移（v1 -> v2 数据迁移）
+	if err := model.RunPricingMigration(); err != nil {
+		common.FatalLog("RunPricingMigration failed: " + err.Error())
+		return err
+	}
+
+	// 缓存刷新与迁移解耦：迁移只写库，缓存由启动阶段独立 warmup
+	common.SysLog("Initializing pricing caches...")
+	if err := model.InitPricingGroupPriceCache(); err != nil {
+		common.FatalLog("pricing group price cache: " + err.Error())
+		return err
+	}
+	if err := model.InitUserPricingAccessCache(); err != nil {
+		common.FatalLog("user pricing access cache: " + err.Error())
+		return err
+	}
+	if err := model.InitPricingGroupModelCache(); err != nil {
+		common.FatalLog("pricing group model cache: " + err.Error())
+		return err
+	}
 
 	// 初始化模型
 	model.GetPricing()

@@ -237,14 +237,14 @@ export const useUsersData = () => {
   // Fetch groups data
   const fetchGroups = async () => {
     try {
-      let res = await API.get(`/api/group/`);
+      let res = await API.get(`/api/user-groups`);
       if (res === undefined) {
         return;
       }
       setGroupOptions(
         res.data.data.map((group) => ({
-          label: group,
-          value: group,
+          label: group.name,
+          value: group.name,
         })),
       );
     } catch (error) {

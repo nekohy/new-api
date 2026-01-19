@@ -17,8 +17,8 @@ import (
 	"github.com/QuantumNous/new-api/relay/channel"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
+	"github.com/QuantumNous/new-api/relay/helper"
 	"github.com/QuantumNous/new-api/service"
-	"github.com/QuantumNous/new-api/setting/ratio_setting"
 
 	"github.com/gin-gonic/gin"
 )
@@ -110,13 +110,13 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (taskErr *dto.
 				seconds = 4
 			}
 			sizeStr, _ := taskData["size"].(string)
-			if info.PriceData.OtherRatios == nil {
-				info.PriceData.OtherRatios = map[string]float64{}
+			if info.PriceData.Multipliers == nil {
+				info.PriceData.Multipliers = map[string]float64{}
 			}
-			info.PriceData.OtherRatios["seconds"] = float64(seconds)
-			info.PriceData.OtherRatios["size"] = 1
+			info.PriceData.Multipliers["seconds"] = float64(seconds)
+			info.PriceData.Multipliers["size"] = 1
 			if sizeStr == "1792x1024" || sizeStr == "1024x1792" {
-				info.PriceData.OtherRatios["size"] = 1.666667
+				info.PriceData.Multipliers["size"] = 1.666667
 			}
 		}
 	}
@@ -140,13 +140,15 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (taskErr *dto.
 	if modelName == "" {
 		modelName = service.CoverTaskActionToModelName(platform, info.Action)
 	}
-	modelPrice, success := ratio_setting.GetModelPrice(modelName, true)
-	if !success {
-		defaultPrice, ok := ratio_setting.GetDefaultModelPriceMap()[modelName]
-		if !ok {
-			modelPrice = 0.1
-		} else {
-			modelPrice = defaultPrice
+
+	// 从新定价系统获取价格
+	spec, _ := helper.GetPriceSpec(info.UsingGroup, modelName)
+	var modelPrice float64 = 0.1
+	if spec != nil {
+		if spec.FixedPrice > 0 {
+			modelPrice = spec.FixedPrice
+		} else if spec.InputPrice > 0 {
+			modelPrice = spec.InputPrice / 1000 // 按 1K tokens 计
 		}
 	}
 
@@ -158,26 +160,19 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (taskErr *dto.
 		}
 	}
 
-	// 预扣
-	groupRatio := ratio_setting.GetGroupRatio(info.UsingGroup)
-	var ratio float64
-	userGroupRatio, hasUserGroupRatio := ratio_setting.GetGroupGroupRatio(info.UserGroup, info.UsingGroup)
-	if hasUserGroupRatio {
-		ratio = modelPrice * userGroupRatio
-	} else {
-		ratio = modelPrice * groupRatio
-	}
+	// 预扣（新定价系统中分组价格差异已在 group_model_prices 表中体现）
+	var ratio float64 = modelPrice
 	// FIXME: 临时修补，支持任务仅按次计费
 	if !common.StringsContains(constant.TaskPricePatches, modelName) {
-		if len(info.PriceData.OtherRatios) > 0 {
-			for _, ra := range info.PriceData.OtherRatios {
+		if len(info.PriceData.Multipliers) > 0 {
+			for _, ra := range info.PriceData.Multipliers {
 				if 1.0 != ra {
 					ratio *= ra
 				}
 			}
 		}
 	}
-	println(fmt.Sprintf("model: %s, model_price: %.4f, group: %s, group_ratio: %.4f, final_ratio: %.4f", modelName, modelPrice, info.UsingGroup, groupRatio, ratio))
+	println(fmt.Sprintf("model: %s, model_price: %.4f, group: %s, final_ratio: %.4f", modelName, modelPrice, info.UsingGroup, ratio))
 	userQuota, err := model.GetUserQuota(info.UserId, false)
 	if err != nil {
 		taskErr = service.TaskErrorWrapper(err, "get_user_quota_failed", http.StatusInternalServerError)
@@ -227,9 +222,9 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (taskErr *dto.
 				if common.StringsContains(constant.TaskPricePatches, modelName) {
 					logContent = fmt.Sprintf("%s，按次计费", logContent)
 				} else {
-					if len(info.PriceData.OtherRatios) > 0 {
+					if len(info.PriceData.Multipliers) > 0 {
 						var contents []string
-						for key, ra := range info.PriceData.OtherRatios {
+						for key, ra := range info.PriceData.Multipliers {
 							if 1.0 != ra {
 								contents = append(contents, fmt.Sprintf("%s: %.2f", key, ra))
 							}
@@ -244,10 +239,8 @@ func RelayTaskSubmit(c *gin.Context, info *relaycommon.RelayInfo) (taskErr *dto.
 					other["request_path"] = c.Request.URL.Path
 				}
 				other["model_price"] = modelPrice
-				other["group_ratio"] = groupRatio
-				if hasUserGroupRatio {
-					other["user_group_ratio"] = userGroupRatio
-				}
+				// 新定价系统中分组倍率统一为 1.0，价格差异已在 group_model_prices 表中体现
+				other["group_ratio"] = 1.0
 				model.RecordConsumeLog(c, info.UserId, model.RecordConsumeLogParams{
 					ChannelId: info.ChannelId,
 					ModelName: modelName,

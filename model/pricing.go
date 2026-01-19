@@ -10,7 +10,6 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
-	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/QuantumNous/new-api/types"
 )
 
@@ -53,6 +52,22 @@ var (
 	modelSupportEndpointTypes = make(map[string][]constant.EndpointType)
 	modelSupportEndpointsLock = sync.RWMutex{}
 )
+
+// isGroupPriceConfigured 检查分组价格是否已配置（至少有一个价格字段非 nil）
+func isGroupPriceConfigured(groupPrice *PricingGroupPrice) bool {
+	if groupPrice == nil {
+		return false
+	}
+	return groupPrice.InputPrice != nil ||
+		groupPrice.OutputPrice != nil ||
+		groupPrice.CachePrice != nil ||
+		groupPrice.CacheCreationPrice != nil ||
+		groupPrice.ImagePrice != nil ||
+		groupPrice.AudioInputPrice != nil ||
+		groupPrice.AudioOutputPrice != nil ||
+		groupPrice.FixedPrice != nil ||
+		groupPrice.QuotaType != nil
+}
 
 func GetPricing() []Pricing {
 	if time.Since(lastGetPricingTime) > time.Minute*1 || len(pricingMap) == 0 {
@@ -281,14 +296,49 @@ func updatePricing() {
 			pricing.Tags = meta.Tags
 			pricing.VendorID = meta.VendorID
 		}
-		modelPrice, findPrice := ratio_setting.GetModelPrice(model, false)
-		if findPrice {
-			pricing.ModelPrice = modelPrice
-			pricing.QuotaType = 1
+		// 从分组定价系统获取价格（尝试从模型的第一个可用分组获取展示价格）
+		var priceInfo *PricingGroupPrice
+		var found bool
+		// 优先从模型的启用分组列表中查找第一个有价格配置的分组
+		for _, group := range groups.Items() {
+			if priceInfo, found = GetPricingGroupPriceFromCache(group, model); found && isGroupPriceConfigured(priceInfo) {
+				break
+			}
+		}
+
+		if found && priceInfo != nil && isGroupPriceConfigured(priceInfo) {
+			quotaType := 0
+			if priceInfo.QuotaType != nil {
+				quotaType = *priceInfo.QuotaType
+			}
+			if quotaType == 1 {
+				// 按次计费
+				if priceInfo.FixedPrice != nil {
+					pricing.ModelPrice = *priceInfo.FixedPrice
+				}
+				pricing.QuotaType = 1
+			} else {
+				// 按量计费：将 $/1M tokens 转换回 ratio 格式 (price / 2)
+				inputPrice := 0.0
+				outputPrice := 0.0
+				if priceInfo.InputPrice != nil {
+					inputPrice = *priceInfo.InputPrice
+				}
+				if priceInfo.OutputPrice != nil {
+					outputPrice = *priceInfo.OutputPrice
+				}
+				pricing.ModelRatio = inputPrice / 2
+				if inputPrice > 0 {
+					pricing.CompletionRatio = outputPrice / inputPrice
+				} else {
+					pricing.CompletionRatio = 1.0
+				}
+				pricing.QuotaType = 0
+			}
 		} else {
-			modelRatio, _, _ := ratio_setting.GetModelRatio(model)
-			pricing.ModelRatio = modelRatio
-			pricing.CompletionRatio = ratio_setting.GetCompletionRatio(model)
+			// 默认值
+			pricing.ModelRatio = 1.0
+			pricing.CompletionRatio = 1.0
 			pricing.QuotaType = 0
 		}
 		pricingMap = append(pricingMap, pricing)

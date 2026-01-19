@@ -176,12 +176,12 @@ func (a *TaskAdaptor) BuildRequestBody(c *gin.Context, info *relaycommon.RelayIn
 	// 	body.Parameters["durationSeconds"] = seconds
 	// }
 
-	info.PriceData.OtherRatios = map[string]float64{
+	info.PriceData.Multipliers = map[string]float64{
 		"sampleCount": float64(body.Parameters["sampleCount"].(int)),
 	}
 
 	// if v, ok := body.Parameters["durationSeconds"]; ok {
-	// 	info.PriceData.OtherRatios["durationSeconds"] = float64(v.(int))
+	// 	info.PriceData.Multipliers["durationSeconds"] = float64(v.(int))
 	// }
 
 	data, err := json.Marshal(body)

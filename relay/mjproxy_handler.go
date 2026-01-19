@@ -217,8 +217,8 @@ func RelaySwapFace(c *gin.Context, info *relaycommon.RelayInfo) *dto.MidjourneyR
 			}
 
 			tokenName := c.GetString("token_name")
-			logContent := fmt.Sprintf("模型固定价格 %.2f，分组倍率 %.2f，操作 %s", priceData.ModelPrice, priceData.GroupRatioInfo.GroupRatio, constant.MjActionSwapFace)
-			other := service.GenerateMjOtherInfo(info, priceData)
+			logContent := fmt.Sprintf("模型固定价格 $%.4f/次，操作 %s", priceData.FixedPrice, constant.MjActionSwapFace)
+			other := service.GenerateMjOtherInfoByPrice(info, priceData)
 			model.RecordConsumeLog(c, info.UserId, model.RecordConsumeLogParams{
 				ChannelId: info.ChannelId,
 				ModelName: modelName,
@@ -517,8 +517,8 @@ func RelayMidjourneySubmit(c *gin.Context, relayInfo *relaycommon.RelayInfo) *dt
 				common.SysLog("error consuming token remain quota: " + err.Error())
 			}
 			tokenName := c.GetString("token_name")
-			logContent := fmt.Sprintf("模型固定价格 %.2f，分组倍率 %.2f，操作 %s，ID %s", priceData.ModelPrice, priceData.GroupRatioInfo.GroupRatio, midjRequest.Action, midjResponse.Result)
-			other := service.GenerateMjOtherInfo(relayInfo, priceData)
+			logContent := fmt.Sprintf("模型固定价格 $%.4f/次，操作 %s，ID %s", priceData.FixedPrice, midjRequest.Action, midjResponse.Result)
+			other := service.GenerateMjOtherInfoByPrice(relayInfo, priceData)
 			model.RecordConsumeLog(c, relayInfo.UserId, model.RecordConsumeLogParams{
 				ChannelId: relayInfo.ChannelId,
 				ModelName: modelName,

@@ -17,106 +17,71 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 
-import React, { useEffect, useState } from 'react';
-import { Card, Spin, Tabs } from '@douyinfe/semi-ui';
+import React, { useState, useEffect } from 'react';
+import { Card, Tabs, TabPane } from '@douyinfe/semi-ui';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import { Users, Package } from 'lucide-react';
 
-import GroupRatioSettings from '../../pages/Setting/Ratio/GroupRatioSettings';
-import ModelRatioSettings from '../../pages/Setting/Ratio/ModelRatioSettings';
-import ModelSettingsVisualEditor from '../../pages/Setting/Ratio/ModelSettingsVisualEditor';
-import ModelRatioNotSetEditor from '../../pages/Setting/Ratio/ModelRationNotSetEditor';
-import UpstreamRatioSync from '../../pages/Setting/Ratio/UpstreamRatioSync';
-
-import { API, showError, toBoolean } from '../../helpers';
+import GroupPricing from '../../pages/Setting/Pricing/GroupPricing';
+import UserGroupSettings from '../../pages/Setting/Pricing/UserGroupSettings';
 
 const RatioSetting = () => {
   const { t } = useTranslation();
-
-  let [inputs, setInputs] = useState({
-    ModelPrice: '',
-    ModelRatio: '',
-    CacheRatio: '',
-    CompletionRatio: '',
-    GroupRatio: '',
-    GroupGroupRatio: '',
-    ImageRatio: '',
-    AudioRatio: '',
-    AudioCompletionRatio: '',
-    AutoGroups: '',
-    DefaultUseAutoGroup: false,
-    ExposeRatioEnabled: false,
-    UserUsableGroups: '',
-    'group_ratio_setting.group_special_usable_group': '',
-  });
-
-  const [loading, setLoading] = useState(false);
-
-  const getOptions = async () => {
-    const res = await API.get('/api/option/');
-    const { success, message, data } = res.data;
-    if (success) {
-      let newInputs = {};
-      data.forEach((item) => {
-        if (
-          item.value.startsWith('{') || item.value.startsWith('[')
-        ) {
-          try {
-            item.value = JSON.stringify(JSON.parse(item.value), null, 2);
-          } catch (e) {
-            // 如果后端返回的不是合法 JSON，直接展示
-          }
-        }
-        if (['DefaultUseAutoGroup', 'ExposeRatioEnabled'].includes(item.key)) {
-          newInputs[item.key] = toBoolean(item.value);
-        } else {
-          newInputs[item.key] = item.value;
-        }
-      });
-      setInputs(newInputs);
-    } else {
-      showError(message);
-    }
-  };
-
-  const onRefresh = async () => {
-    try {
-      setLoading(true);
-      await getOptions();
-    } catch (error) {
-      showError('刷新失败');
-    } finally {
-      setLoading(false);
-    }
-  };
+  const navigate = useNavigate();
+  const location = useLocation();
+  const [subTab, setSubTab] = useState('model');
 
   useEffect(() => {
-    onRefresh();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    const searchParams = new URLSearchParams(location.search);
+    const sub = searchParams.get('sub');
+    if (sub === 'user' || sub === 'model') {
+      setSubTab(sub);
+    } else {
+      // 默认显示模型分组
+      setSubTab('model');
+    }
+  }, [location.search]);
+
+  const onChangeSubTab = (key) => {
+    setSubTab(key);
+    const searchParams = new URLSearchParams(location.search);
+    searchParams.set('sub', key);
+    navigate(`?${searchParams.toString()}`, { replace: true });
+  };
 
   return (
-    <Spin spinning={loading} size='large'>
-      {/* 模型倍率设置以及可视化编辑器 */}
-      <Card style={{ marginTop: '10px' }}>
-        <Tabs type='card'>
-          <Tabs.TabPane tab={t('模型倍率设置')} itemKey='model'>
-            <ModelRatioSettings options={inputs} refresh={onRefresh} />
-          </Tabs.TabPane>
-          <Tabs.TabPane tab={t('分组倍率设置')} itemKey='group'>
-            <GroupRatioSettings options={inputs} refresh={onRefresh} />
-          </Tabs.TabPane>
-          <Tabs.TabPane tab={t('可视化倍率设置')} itemKey='visual'>
-            <ModelSettingsVisualEditor options={inputs} refresh={onRefresh} />
-          </Tabs.TabPane>
-          <Tabs.TabPane tab={t('未设置倍率模型')} itemKey='unset_models'>
-            <ModelRatioNotSetEditor options={inputs} refresh={onRefresh} />
-          </Tabs.TabPane>
-          <Tabs.TabPane tab={t('上游倍率同步')} itemKey='upstream_sync'>
-            <UpstreamRatioSync options={inputs} refresh={onRefresh} />
-          </Tabs.TabPane>
-        </Tabs>
-      </Card>
-    </Spin>
+    <Card style={{ marginTop: '10px' }}>
+      <Tabs
+        type="line"
+        activeKey={subTab}
+        onChange={onChangeSubTab}
+        style={{ marginBottom: 16 }}
+      >
+        <TabPane
+          tab={
+            <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+              <Package size={16} />
+              {t('模型分组')}
+            </span>
+          }
+          itemKey="model"
+        >
+          {subTab === 'model' && <GroupPricing />}
+        </TabPane>
+        <TabPane
+          tab={
+            <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+              <Users size={16} />
+              {t('用户分组')}
+            </span>
+          }
+          itemKey="user"
+        >
+          {subTab === 'user' && <UserGroupSettings />}
+        </TabPane>
+      </Tabs>
+    </Card>
   );
 };
 

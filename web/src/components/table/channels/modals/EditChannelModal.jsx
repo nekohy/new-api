@@ -57,6 +57,7 @@ import {
 import ModelSelectModal from './ModelSelectModal';
 import OllamaModelModal from './OllamaModelModal';
 import CodexOAuthModal from './CodexOAuthModal';
+import ModelGroupConfigurator from '../ModelGroupConfigurator';
 import JSONEditor from '../../../common/ui/JSONEditor';
 import SecureVerificationModal from '../../../common/modals/SecureVerificationModal';
 import ChannelKeyDisplay from '../../../common/ui/ChannelKeyDisplay';
@@ -179,6 +180,10 @@ const EditChannelModal = (props) => {
   const [basicModels, setBasicModels] = useState([]);
   const [fullModels, setFullModels] = useState([]);
   const [modelGroups, setModelGroups] = useState([]);
+  const [modelGroupConfig, setModelGroupConfig] = useState({
+    defaultGroups: ['default'],
+    specificRules: {},
+  });
   const [customModel, setCustomModel] = useState('');
   const [modalImageUrl, setModalImageUrl] = useState('');
   const [isModalOpenurl, setIsModalOpenurl] = useState(false);
@@ -551,6 +556,31 @@ const EditChannelModal = (props) => {
       } else {
         data.groups = data.group.split(',');
       }
+      // Parse model_groups for ModelGroupConfigurator
+      let mgConfig = { defaultGroups: data.groups || ['default'], specificRules: {} };
+      if (data.model_groups) {
+        try {
+          let mgMap = data.model_groups;
+          if (typeof mgMap === 'string') {
+            mgMap = JSON.parse(mgMap);
+          }
+          if (mgMap && typeof mgMap === 'object') {
+            const defaultG = data.groups || [];
+            const specificR = {};
+            Object.entries(mgMap).forEach(([model, groups]) => {
+              const sortedGroups = [...(groups || [])].sort();
+              const sortedDefault = [...defaultG].sort();
+              if (JSON.stringify(sortedGroups) !== JSON.stringify(sortedDefault)) {
+                specificR[model] = groups;
+              }
+            });
+            mgConfig = { defaultGroups: defaultG.length > 0 ? defaultG : ['default'], specificRules: specificR };
+          }
+        } catch (error) {
+          console.error('解析模型分组配置失败:', error);
+        }
+      }
+      setModelGroupConfig(mgConfig);
       if (data.model_mapping !== '') {
         data.model_mapping = JSON.stringify(
           JSON.parse(data.model_mapping),
@@ -769,6 +799,7 @@ const EditChannelModal = (props) => {
           key: id,
           label: id,
           value: id,
+          has_price: model.has_price,
         };
       });
       setOriginModelOptions(localModelOptions);
@@ -990,6 +1021,8 @@ const EditChannelModal = (props) => {
     setInputs(getInitValues());
     // 重置密钥显示状态
     resetKeyDisplayState();
+    // 重置模型分组配置
+    setModelGroupConfig({ defaultGroups: ['default'], specificRules: {} });
   };
 
   const handleVertexUploadChange = ({ fileList }) => {
@@ -1364,6 +1397,19 @@ const EditChannelModal = (props) => {
 
     let res;
     localInputs.auto_ban = localInputs.auto_ban ? 1 : 0;
+
+    // Build model_groups from modelGroupConfig
+    const modelGroupsMap = {};
+    const finalDefaultGroups = modelGroupConfig.defaultGroups || ['default'];
+    (localInputs.models || []).forEach((model) => {
+      if (modelGroupConfig.specificRules && modelGroupConfig.specificRules[model]) {
+        modelGroupsMap[model] = modelGroupConfig.specificRules[model];
+      } else {
+        modelGroupsMap[model] = finalDefaultGroups;
+      }
+    });
+    localInputs.model_groups = JSON.stringify(modelGroupsMap);
+
     localInputs.models = localInputs.models.join(',');
     localInputs.group = (localInputs.groups || []).join(',');
 
@@ -2657,7 +2703,7 @@ const EditChannelModal = (props) => {
                           isRenderInTag: true,
                           content: (
                             <span
-                              className='cursor-pointer select-none'
+                              className='cursor-pointer select-none flex items-center gap-1'
                               role='button'
                               tabIndex={0}
                               title={t('点击复制模型名称')}
@@ -2858,19 +2904,23 @@ const EditChannelModal = (props) => {
                       </div>
                     </div>
 
-                    <Form.Select
-                      field='groups'
-                      label={t('分组')}
-                      placeholder={t('请选择可以使用该渠道的分组')}
-                      multiple
-                      allowAdditions
-                      additionLabel={t(
-                        '请在系统设置页面编辑分组倍率以添加新的分组：',
-                      )}
-                      optionList={groupOptions}
-                      style={{ width: '100%' }}
-                      onChange={(value) => handleInputChange('groups', value)}
-                    />
+                    <Form.Slot label={t('模型分组配置')}>
+                      <ModelGroupConfigurator
+                        models={inputs.models || []}
+                        value={modelGroupConfig}
+                        onChange={(newConfig) => {
+                          setModelGroupConfig(newConfig);
+                          if (
+                            JSON.stringify(newConfig.defaultGroups) !==
+                            JSON.stringify(inputs.groups)
+                          ) {
+                            handleInputChange('groups', newConfig.defaultGroups);
+                          }
+                        }}
+                        allGroups={groupOptions.map((g) => g.value)}
+                        disabled={loading}
+                      />
+                    </Form.Slot>
 
                     <Form.Input
                       field='tag'

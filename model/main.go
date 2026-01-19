@@ -198,9 +198,6 @@ func InitDB() (err error) {
 		if !common.IsMasterNode {
 			return nil
 		}
-		if common.UsingMySQL {
-			//_, _ = sqlDB.Exec("ALTER TABLE channels MODIFY model_mapping TEXT;") // TODO: delete this line when most users have upgraded
-		}
 		common.SysLog("database migration started")
 		err = migrateDB()
 		return err
@@ -247,7 +244,39 @@ func InitLogDB() (err error) {
 	return err
 }
 
+// SchemaVersion 当前代码对应的 schema 版本号
+// 每次修改表结构时需要递增此值
+const SchemaVersion = 1
+
+func getSchemaVersion() int {
+	// 检查 options 表是否存在
+	if !DB.Migrator().HasTable(&Option{}) {
+		return 0 // 表不存在，首次运行
+	}
+	var opt Option
+	if err := DB.Where("`key` = ?", "SchemaVersion").First(&opt).Error; err != nil {
+		return 0 // 不存在则为 0（首次运行）
+	}
+	var v int
+	fmt.Sscanf(opt.Value, "%d", &v)
+	return v
+}
+
+func setSchemaVersion(v int) error {
+	return UpdateOption("SchemaVersion", fmt.Sprintf("%d", v))
+}
+
 func migrateDB() error {
+	currentVersion := getSchemaVersion()
+
+	// 如果已经是最新版本，跳过迁移
+	if currentVersion >= SchemaVersion {
+		common.SysLog(fmt.Sprintf("schema version %d is up to date, skipping AutoMigrate", currentVersion))
+		return nil
+	}
+
+	common.SysLog(fmt.Sprintf("schema version %d -> %d, running AutoMigrate", currentVersion, SchemaVersion))
+
 	err := DB.AutoMigrate(
 		&Channel{},
 		&Token{},
@@ -268,65 +297,20 @@ func migrateDB() error {
 		&TwoFA{},
 		&TwoFABackupCode{},
 		&Checkin{},
+		&PricingGroupPrice{},
+		&PricingGroup{},
+		&UserPricingAccess{},
+		&PricingGroupModel{},
 	)
 	if err != nil {
 		return err
 	}
-	return nil
-}
 
-func migrateDBFast() error {
-
-	var wg sync.WaitGroup
-
-	migrations := []struct {
-		model interface{}
-		name  string
-	}{
-		{&Channel{}, "Channel"},
-		{&Token{}, "Token"},
-		{&User{}, "User"},
-		{&PasskeyCredential{}, "PasskeyCredential"},
-		{&Option{}, "Option"},
-		{&Redemption{}, "Redemption"},
-		{&Ability{}, "Ability"},
-		{&Log{}, "Log"},
-		{&Midjourney{}, "Midjourney"},
-		{&TopUp{}, "TopUp"},
-		{&QuotaData{}, "QuotaData"},
-		{&Task{}, "Task"},
-		{&Model{}, "Model"},
-		{&Vendor{}, "Vendor"},
-		{&PrefillGroup{}, "PrefillGroup"},
-		{&Setup{}, "Setup"},
-		{&TwoFA{}, "TwoFA"},
-		{&TwoFABackupCode{}, "TwoFABackupCode"},
-		{&Checkin{}, "Checkin"},
-	}
-	// 动态计算migration数量，确保errChan缓冲区足够大
-	errChan := make(chan error, len(migrations))
-
-	for _, m := range migrations {
-		wg.Add(1)
-		go func(model interface{}, name string) {
-			defer wg.Done()
-			if err := DB.AutoMigrate(model); err != nil {
-				errChan <- fmt.Errorf("failed to migrate %s: %v", name, err)
-			}
-		}(m.model, m.name)
+	// 迁移成功后更新版本号
+	if err := setSchemaVersion(SchemaVersion); err != nil {
+		common.SysError("failed to update schema version: " + err.Error())
 	}
 
-	// Wait for all migrations to complete
-	wg.Wait()
-	close(errChan)
-
-	// Check for any errors
-	for err := range errChan {
-		if err != nil {
-			return err
-		}
-	}
-	common.SysLog("database migrated")
 	return nil
 }
 

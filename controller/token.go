@@ -12,6 +12,44 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// validateTokenGroup performs validation for token.group field.
+//
+// Contract:
+// - token.group is a model group name (pricing group name).
+// - "" means "use user's default" (always allowed).
+// - "auto" is NO LONGER supported and will be rejected.
+//
+// Validation logic:
+// - On DB/query errors, validation is skipped (fail-open) to reduce risk.
+func validateTokenGroup(c *gin.Context, group string) (bool, string) {
+	group = strings.TrimSpace(group)
+	if group == "" {
+		return true, ""
+	}
+	if group == "auto" {
+		return false, "不再支持 'auto' 分组，请选择具体的模型分组或留空"
+	}
+
+	userId := c.GetInt("id")
+	userGroup, err := model.GetUserGroup(userId, false)
+	if err != nil || strings.TrimSpace(userGroup) == "" {
+		// Unable to determine user group -> skip strict validation.
+		return true, ""
+	}
+
+	rows, err := model.GetUserPricingAccessList(userGroup)
+	if err != nil {
+		// Query failed -> skip strict validation.
+		return true, ""
+	}
+	for _, r := range rows {
+		if r != nil && r.ModelGroupName == group {
+			return true, ""
+		}
+	}
+	return false, "无效的模型分组：不在当前用户可用分组列表中"
+}
+
 func GetAllTokens(c *gin.Context) {
 	userId := c.GetInt("id")
 	pageInfo := common.GetPageQuery(c)
@@ -150,6 +188,13 @@ func AddToken(c *gin.Context) {
 		})
 		return
 	}
+	if ok, msg := validateTokenGroup(c, token.Group); !ok {
+		c.JSON(http.StatusOK, gin.H{
+			"success": false,
+			"message": msg,
+		})
+		return
+	}
 	// 非无限额度时，检查额度值是否超出有效范围
 	if !token.UnlimitedQuota {
 		if token.RemainQuota < 0 {
@@ -232,6 +277,13 @@ func UpdateToken(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
 			"success": false,
 			"message": "令牌名称过长",
+		})
+		return
+	}
+	if ok, msg := validateTokenGroup(c, token.Group); !ok {
+		c.JSON(http.StatusOK, gin.H{
+			"success": false,
+			"message": msg,
 		})
 		return
 	}
